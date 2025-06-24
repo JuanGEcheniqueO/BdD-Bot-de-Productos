@@ -44,6 +44,17 @@ def obtener_rol_usuario(id_telegram):
     else:
         return None, None
 
+def buscar_productos_por_nombre(termino):
+    conn = mysql.connector.connect(**DB_CONFIG)
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT nombre, precio, descripcion FROM productos WHERE LOWER(nombre) LIKE %s",
+        (f"%{termino.lower()}%",)
+    )
+    resultados = cursor.fetchall()
+    conn.close()
+    return resultados
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     nombre_usuario = update.effective_user.first_name or "Usuario"
@@ -80,7 +91,7 @@ async def productos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     mensaje = "📦 Nuestros productos disponibles:\n\n"
-    for nombre, precio, descripcion in productos:
+    for nombre, precio, descripcion in obtener_productos():
         mensaje += f"🛍️ *{nombre}*\n💲 ${precio:,.2f}\n📘 {descripcion}\n\n"
 
     keyboard = InlineKeyboardMarkup([
@@ -90,32 +101,25 @@ async def productos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(mensaje, reply_markup=keyboard)
 
 async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) == 0:
-        await update.message.reply_text("📌 Usá: /buscar <nombre>")
+    if not context.args:
+        await update.message.reply_text("📌 Usá: /buscar <nombre del producto>")
         return
 
-    termino = ' '.join(context.args)
+    termino = ' '.join(context.args).strip()
+    resultados = buscar_productos_por_nombre(termino)
 
-    conn = mysql.connector.connect(**DB_CONFIG)
-    cursor = conn.cursor()
-    cursor.execute("SELECT nombre, precio, descripcion, stock FROM productos WHERE nombre LIKE %s", (f"%{termino}%",))
-    resultados = cursor.fetchall()
-    conn.close()
+    if resultados:
+        mensaje = f"🔎 Resultados para: *{termino}*\n\n"
+        for nombre, precio, descripcion in resultados:
+            mensaje += f"• *{nombre}*\n  💲 ${precio:,.2f}\n  📘 {descripcion}\n\n"
 
-    if not resultados:
-        await update.message.reply_text("❌ No se encontraron productos.")
-        return
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🛒 Hacer pedido", callback_data="iniciar_pedido")]
+        ])
+        await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=keyboard)
+    else:
+        await update.message.reply_text("❌ No se encontraron productos con ese nombre.")
 
-    mensaje = f"🔎 Resultados para: {termino}\n\n"
-    for nombre, precio, descripcion in resultados:
-        mensaje += f"• *{nombre}*\n  💲 ${precio:,.2f}\n  📘 {descripcion}\n\n"
-
-    await update.message.reply_text(mensaje, parse_mode="Markdown")
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🛒 Hacer pedido", callback_data="iniciar_pedido")]
-    ])
-    await update.message.reply_text(mensaje, reply_markup=keyboard)
 
 async def agregar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
