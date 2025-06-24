@@ -153,7 +153,7 @@ async def manejar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     if context.user_data.get("pedido_en_progreso"):
-        await query.message.reply_text("⚠️ Ya estás haciendo un pedido. Por favor completalo antes de iniciar otro.")
+        await query.message.reply_text("⚠️ Ya estás haciendo un pedido. Por favor espera que termine el proceso.")
         return ConversationHandler.END
 
     context.user_data["pedido_en_progreso"] = True
