@@ -152,7 +152,7 @@ async def manejar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     if query.data == "iniciar_pedido":
-        await query.edit_message_text("✏️ ¿Qué producto desea pedir?")
+        await query.message.reply_text("✏️ ¿Qué producto desea pedir?")
         return PEDIDO_NOMBRE
 
 async def recibir_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE):
