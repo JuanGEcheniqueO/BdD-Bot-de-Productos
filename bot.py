@@ -176,14 +176,43 @@ async def recibir_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO pedidos (id_telegram, nombre_cliente, producto, direccion)
-        VALUES (%s, %s, %s, %s)
-    """, (user_id, nombre, producto, direccion))
-    conn.commit()
-    conn.close()
 
-    await update.message.reply_text(f"✅ Pedido registrado:\nProducto: {producto}\nDirección: {direccion}")
+    cursor.execute("SELECT stock FROM productos WHERE nombre = %s", (producto,))
+    resultado = cursor.fetchone()
+
+    if not resultado:
+        await update.message.reply_text("❌ El producto no existe en nuestra base de datos.")
+        context.user_data["pedido_en_progreso"] = False
+        conn.close()
+        return ConversationHandler.END
+
+    stock_disponible = resultado[0]
+
+    if stock_disponible > 0:
+        
+        cursor.execute("UPDATE productos SET stock = stock - 1 WHERE nombre = %s", (producto,))
+
+        cursor.execute("""
+            INSERT INTO pedidos (id_telegram, nombre_cliente, producto, direccion)
+            VALUES (%s, %s, %s, %s)
+        """, (user_id, nombre, producto, direccion))
+        conn.commit()
+        conn.close()
+
+        await update.message.reply_text(
+            f"✅ Pedido registrado correctamente.\n"
+            f"📦 Producto: {producto}\n"
+            f"📍 Dirección: {direccion}\n\n"
+            f"🚚 Su producto está por ser despachado. ¡Gracias por su compra!"
+        )
+    else:
+        conn.close()
+        await update.message.reply_text(
+            f"⚠️ Disculpe, no hay stock disponible del producto '{producto}'.\n\n"
+            f"📦 Puede esperar un estimado de 1 a 2 semanas o realizar otro pedido."
+        )
+
+    context.user_data["pedido_en_progreso"] = False
     return ConversationHandler.END
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
