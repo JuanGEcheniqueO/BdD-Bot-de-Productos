@@ -148,12 +148,20 @@ async def manejar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _, rol = obtener_rol_usuario(user_id)
 
     if rol != "Cliente":
-        await query.edit_message_text("⛔ Solo los clientes pueden hacer pedidos.")
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("⛔ Solo los clientes pueden hacer pedidos.")
         return ConversationHandler.END
 
-    if query.data == "iniciar_pedido":
-        await query.message.reply_text("✏️ ¿Qué producto desea pedir?")
-        return PEDIDO_NOMBRE
+    if context.user_data.get("pedido_en_progreso"):
+        await query.message.reply_text("⚠️ Ya estás haciendo un pedido. Por favor completalo antes de iniciar otro.")
+        return ConversationHandler.END
+
+    context.user_data["pedido_en_progreso"] = True
+
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    await query.message.reply_text("✏️ ¿Qué producto desea pedir?")
+    return PEDIDO_NOMBRE
 
 async def recibir_pedido(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["producto"] = update.message.text
