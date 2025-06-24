@@ -21,11 +21,12 @@ DB_CONFIG = {
 }
 
 PEDIDO_NOMBRE, PEDIDO_DIRECCION = range(2)
+AGREGAR_NOMBRE, AGREGAR_PRECIO, AGREGAR_STOCK, AGREGAR_DESC = range(4)
 
 def obtener_productos():
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
-    cursor.execute("SELECT nombre, precio FROM productos")
+    cursor.execute("SELECT nombre, precio, descripcion FROM productos")
     resultados = cursor.fetchall()
     conn.close()
     return resultados
@@ -78,9 +79,9 @@ async def productos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ No hay productos cargados.")
         return
 
-    mensaje = "📦 Productos disponibles:\n\n"
-    for nombre, precio in datos:
-        mensaje += f"• {nombre} – ${precio:,.2f}\n"
+    mensaje = "📦 Nuestros productos disponibles:\n\n"
+    for nombre, precio, descripcion in productos:
+        mensaje += f"🛍️ *{nombre}*\n💲 ${precio:,.2f}\n📘 {descripcion}\n\n"
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Hacer pedido", callback_data="iniciar_pedido")]
@@ -97,7 +98,7 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
-    cursor.execute("SELECT nombre, precio FROM productos WHERE nombre LIKE %s", (f"%{termino}%",))
+    cursor.execute("SELECT nombre, precio, descripcion, stock FROM productos WHERE nombre LIKE %s", (f"%{termino}%",))
     resultados = cursor.fetchall()
     conn.close()
 
@@ -106,40 +107,84 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     mensaje = f"🔎 Resultados para: {termino}\n\n"
-    for nombre, precio in resultados:
-        mensaje += f"• {nombre} – ${precio:,.2f}\n"
+    for nombre, precio, descripcion in resultados:
+        mensaje += f"• *{nombre}*\n  💲 ${precio:,.2f}\n  📘 {descripcion}\n\n"
+
+    await update.message.reply_text(mensaje, parse_mode="Markdown")
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 Hacer pedido", callback_data="iniciar_pedido")]
     ])
     await update.message.reply_text(mensaje, reply_markup=keyboard)
 
-async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def agregar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     _, rol = obtener_rol_usuario(user_id)
 
     if rol != "Administrador":
         await update.message.reply_text("⛔ Solo los administradores pueden agregar productos.")
-        return
+        return ConversationHandler.END
 
-    if len(context.args) < 2:
-        await update.message.reply_text("📌 Usá: /agregar <nombre> <precio>")
-        return
+    await update.message.reply_text("📦 Ingresá el *nombre* del producto:", parse_mode="Markdown")
+    return AGREGAR_NOMBRE
 
-    nombre = ' '.join(context.args[:-1])
-    try:
-        precio = float(context.args[-1])
-    except ValueError:
-        await update.message.reply_text("❌ El precio debe ser un número.")
-        return
+async def agregar_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    nombre = update.message.text.strip()
+    context.user_data["nuevo_producto"] = {"nombre": nombre}
 
     conn = mysql.connector.connect(**DB_CONFIG)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO productos (nombre, precio) VALUES (%s, %s)", (nombre, precio))
+    cursor.execute("SELECT id FROM productos WHERE nombre = %s", (nombre,))
+    if cursor.fetchone():
+        await update.message.reply_text("❗ Ya existe un producto con ese nombre.")
+        conn.close()
+        return ConversationHandler.END
+
+    conn.close()
+    await update.message.reply_text("💲 Ingresá el *precio* del producto:", parse_mode="Markdown")
+    return AGREGAR_PRECIO
+
+async def agregar_precio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        precio = float(update.message.text.replace(",", "."))
+        context.user_data["nuevo_producto"]["precio"] = precio
+        await update.message.reply_text("🔢 Ingresá el *stock disponible* (cantidad):", parse_mode="Markdown")
+        return AGREGAR_STOCK
+    except ValueError:
+        await update.message.reply_text("❌ El precio debe ser un número. Intentá de nuevo:")
+        return AGREGAR_PRECIO
+    
+async def agregar_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        stock = int(update.message.text)
+        context.user_data["nuevo_producto"]["stock"] = stock
+        await update.message.reply_text("📝 Ingresá una *descripción breve* del producto:", parse_mode="Markdown")
+        return AGREGAR_DESC
+    except ValueError:
+        await update.message.reply_text("❌ El stock debe ser un número entero. Intentá de nuevo:")
+        return AGREGAR_STOCK
+
+async def agregar_descripcion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    descripcion = update.message.text.strip()
+    prod = context.user_data["nuevo_producto"]
+    prod["descripcion"] = descripcion
+
+    conn = mysql.connector.connect(**DB_CONFIG)
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO productos (nombre, precio, stock, descripcion)
+        VALUES (%s, %s, %s, %s)
+    """, (prod["nombre"], prod["precio"], prod["stock"], prod["descripcion"]))
     conn.commit()
     conn.close()
 
-    await update.message.reply_text(f"✅ Producto agregado: {nombre} – ${precio:,.2f}")
+    await update.message.reply_text(f"✅ Producto agregado correctamente:\n\n"
+                                    f"🛍️ {prod['nombre']}\n"
+                                    f"💲 ${prod['precio']:,.2f}\n"
+                                    f"🔢 Stock: {prod['stock']}\n"
+                                    f"📘 {prod['descripcion']}",
+                                    parse_mode="Markdown")
+    return ConversationHandler.END
 
 async def manejar_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -225,7 +270,18 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("productos", productos))
     app.add_handler(CommandHandler("buscar", buscar))
-    app.add_handler(CommandHandler("agregar", agregar))
+
+    conv_agregar = ConversationHandler(
+        entry_points=[CommandHandler("agregar", agregar_producto)],
+        states={
+            AGREGAR_NOMBRE: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_nombre)],
+            AGREGAR_PRECIO: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_precio)],
+            AGREGAR_STOCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_stock)],
+            AGREGAR_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_descripcion)],
+        },
+        fallbacks=[],
+    )
+    app.add_handler(conv_agregar)
 
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(manejar_callback)],
