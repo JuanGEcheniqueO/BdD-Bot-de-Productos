@@ -244,7 +244,7 @@ async def recibir_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     producto_id, stock_disponible = resultado
 
     cursor.execute("SELECT id FROM usuarios WHERE id_telegram = %s", (user_id,))
-    usuario = cursor.fetchone()
+    usuario = cursor.fetchone()[0]
 
     if not usuario:
         await update.message.reply_text("❌ No se encontró tu usuario en la base de datos.")
@@ -252,14 +252,14 @@ async def recibir_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return ConversationHandler.END
 
-    usuario_id = usuario[0]
+    usuario_id = usuario
 
     if stock_disponible > 0:
         
         cursor.execute("UPDATE productos SET stock = stock - 1 WHERE nombre = %s", (producto,))
 
         cursor.execute("""
-            INSERT INTO pedidos (id_usuario, nombre_cliente, id_producto, producto, direccion)
+            INSERT INTO pedidos (usuario_id, nombre_cliente, producto_id, producto, direccion)
             VALUES (%s, %s, %s, %s, %s)
         """, (usuario_id, nombre, producto_id, producto, direccion))
         conn.commit()
