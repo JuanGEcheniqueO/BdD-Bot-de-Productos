@@ -74,7 +74,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📌 Comandos disponibles:\n"
             f"• /productos – Ver lista de productos.\n"
             f"• /buscar <nombre> – Buscar productos por nombre.\n"
-            f"• /agregar <nombre> <precio> – Agregar nuevo producto."
+            f"• /agregar <nombre> <precio> <stock> <descripción> – Agregar nuevo producto."
         )
     else:
         await update.message.reply_text(
