@@ -112,14 +112,20 @@ async def buscar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mensaje = f"🔎 Resultados para: *{termino}*\n\n"
         for nombre, precio, descripcion in resultados:
             mensaje += f"• *{nombre}*\n  💲 ${precio:,.2f}\n  📘 {descripcion}\n\n"
-
+        try:
+            ultimo_id = context.user_data.get("ultimo_boton_id")
+            if ultimo_id:
+                await update.message.bot.delete_message(chat_id=update.effective_chat.id, message_id=ultimo_id)
+        except:
+            pass
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🛒 Hacer pedido", callback_data="iniciar_pedido")]
         ])
-        await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=keyboard)
+        sent_message = await update.message.reply_text(mensaje, parse_mode="Markdown", reply_markup=keyboard)
+
+        context.user_data["ultimo_boton_id"] = sent_message.message_id
     else:
         await update.message.reply_text("❌ No se encontraron productos con ese nombre.")
-
 
 async def agregar_producto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
